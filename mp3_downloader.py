@@ -8,20 +8,27 @@ from apiclient.discovery import build
 from datetime import timedelta
 from colored import fg, attr
 import socket
-import eyed3
 import argparse
+from tagger import Tag
+import terminal as Term
 
 
 close = False
-special_chars = ["(", "["]  # Used to strip unnecessory song info in the filename.
+final_filename =""
+files_downloaded = []
 
 
-def write(subs):
+def write_subs_list(subs):
+    if(files_downloaded):
+        print(Term.clearscreen(),end = "")
+        print("Downloaded files:")
+        for num, f in enumerate(files_downloaded):
+            print(f"{count}. {f}.mp3")
     with open("/home/gireesh/.config/.youtube.config/subscription_list", "w") as f:
         f.write(json.dumps(subs))
 
 
-# donwload based on likes and dislike rate
+# download  based on likes and dislike rate
 def check_stats(yt_id, vd_id):
     vd_details = yt_id.videos().list(id=vd_id, part='statistics').execute()
     likes = int(vd_details['items'][0]['statistics']['likeCount'])
@@ -29,8 +36,8 @@ def check_stats(yt_id, vd_id):
     return True if likes*5/100 > dislikes else False
 
 
-# check for video length, so that to differentiate between songs and videos
 def check_time(time):
+    # check for video length, so that to differentiate between songs and videos
     max_time = timedelta(minutes=6)
     min_time = timedelta(minutes=2, seconds=10)
     hours = 0
@@ -49,6 +56,20 @@ def check_time(time):
     return delta_time < max_time and delta_time > min_time
 
 
+def progress_show(opts):
+    if opts["status"] == "downloading":
+        total_bytes = int(opts["total_bytes"])
+        downloaded_bytes = int(opts["downloaded_bytes"])
+        download_progress = downloaded_bytes / total_bytes 
+        pBarLen = 50
+        pDone = "#" * int(download_progress * pBarLen)
+        pLeft = "-" * (pBarLen - len(pDone))
+        print(f'{Term.clearline()}{opts["tmpfilename"]}{Term.setCursorLine(40)}{int(opts["elapsed"])}/{int( opts["eta"])}ETA\t[{pDone}{pLeft}]\t{int(download_progress*100)}%',end="\r")
+        global final_filename 
+        final_filename = opts["filename"][:opts["filename"].rfind(".")] + ".mp3"
+    elif opts["status"] == "finished":
+        print("")
+
 def download(link):
     download_option = {
             'format': 'bestaudio/best',
@@ -58,10 +79,11 @@ def download(link):
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
-                }]
+                }],
+            'quiet': True,
+            'progress_hooks': [progress_show]
             }
-
-# Download songs
+    # Download songs
     with youtube_dl.YoutubeDL(download_option) as dl:
         try:
             dl.download([link])
@@ -71,83 +93,58 @@ def download(link):
 
 
 def download_channel(yt, channel_id, last_song, channel_num, total_channels):
+    """ downloads all pending songs from a channel """
     global close
     channel = yt.channels().list(id=channel_id, part="contentDetails").execute()
     playlist = channel["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
     download_list = []
     token = None                # page token
-    var = True                  # last song check variable
+    page_end = False                  # last song check variable
     page = 0
-    while var:
-        print(f" Getting musics list\nat page number {page} \n\n")
+    print(f" Getting musics list:", end="")
+    while not page_end:
         lst = yt.playlistItems().list(playlistId=playlist, maxResults=10, pageToken=token, part="snippet").execute()
-        for count, i in enumerate(lst["items"]):
+        for i in lst["items"]:
             Id = i["snippet"]["resourceId"]["videoId"]
-            print(count, Id)
             if last_song != Id:
                 vd_detail = yt.videos().list(id=Id, part="contentDetails").execute()
                 vd_time = vd_detail["items"][0]["contentDetails"]["duration"]
                 # check if the video is song by guessing from the length
                 if check_time(vd_time) and check_stats(yt, Id):
                     download_list.append(Id)
-                else:
-                    print(f"skipping  {i['snippet']['title']}\n duration: {vd_time}")
             else:
-                var = False
+                page_end = True
                 break
         token = lst.get("nextPageToken")
         if not token:
             break
         page += 1
     download_list.reverse()
-    # os.system("clear")
-    for count, i in enumerate(download_list):
+    print("",end="\r")
+    print("\n\n", end="")                   # two lines are needed to display information and are cleared later
+    for count, song_link in enumerate(download_list):
         try:
-            print(f"%s Downloading music from channel number {channel_num} out of {total_channels} %s" % (fg(11), attr(0)))
-            print(f"%s song number {count+1} out of {len(download_list)} %s" % (fg(40), attr(0)))
-            old_set_of_songs = set(os.listdir())
-            download(i)
-            latest_song = (set(os.listdir()) - old_set_of_songs)
-            if latest_song:
-                print(f"renaming file {latest_song}")
-                add_title(latest_song.pop())
+            print(Term.mvCursorVerticle(2)+"\r", end=Term.clearEverythingAfter())
+            print(f"%s\tDownloading {count+1} out of {len(download_list)} %s" % (fg(40), attr(0)))
+            download(song_link)
+            files_downloaded.append(Tag(final_filename))
         except KeyboardInterrupt:
             close = True
             return last_song
         except youtube_dl.utils.DownloadError:
             print("download error skipping this one")
+            close = True
+            return last_song
         except Exception as unkown_e:
             close = True
             print(unkown_e)
             return last_song
-        # os.system("clear")
         last_song = i
     return last_song
 
 
-def add_title(song):
-    # This function changes songs title so it is better to use this at the end
-    song_tag = eyed3.load(song)
-    file_name = song_tag.path
-
-    # Get only the file name
-    while ("/" in file_name):
-        file_name = file_name[file_name.index("/")+1:]
-    title = file_name.rstrip(".mp3")
-
-    for char in special_chars:
-        if char in title:
-            title = title[:title.index(char)]
-    song_tag.tag.title = title
-    song_tag.tag.save()
-    try:
-        # if song name isn't changed os error will occur
-        song_tag.rename(title)
-    except OSError:
-        pass
-
-
 def run_check():
+    ''' check the required files  '''
     try:
         with open("/home/gireesh/.config/.youtube.config/subscription_list") as f:
             txt = f.read()
@@ -160,6 +157,7 @@ def run_check():
     return txt
 
 def youtube_auth():
+    '''gets authentication keys from youtube'''
     api_key = os.environ.get("youtube_api")
     if api_key:
         return build("youtube", "v3", developerKey=api_key)
@@ -169,13 +167,14 @@ def youtube_auth():
 
 
 def add_subscription(yt, channel_id):
+    """ adds channel_id to subscription_list """
     channel_id = channel_id.lstrip("https://").lstrip("www.").lstrip("youtube.com/channel/")
     channel = yt.channels().list(id=channel_id, part="contentDetails").execute()
     playlist = channel['items'][0]['contentDetails']['relatedPlaylists']['uploads']
     lst = yt.playlistItems().list(playlistId=playlist, maxResults=10, pageToken=None, part="snippet").execute()
     last_song = lst['items'][0]['snippet']['resourceId']['videoId']
     
-    title = yt.channels().list(id=cid, part="snippet").execute()['items'][0]['snippet']['title']
+    title = yt.channels().list(id=channel_id, part="snippet").execute()['items'][0]['snippet']['title']
     print(f"Adding channel \"{title}\"")
 
     with open("/home/gireesh/.config/.youtube.config/subscription_list", "r") as f:
@@ -190,14 +189,11 @@ def main():
     txt = run_check()
     subs = json.loads(txt)
     global yt
-
     os.chdir("/storage/music/temp")
-
-    print("download started")
     channel_num = 1
     total_channels = len(subs)
     for i, j in subs.items():
-        print(f"%s Downloading music from channel number {channel_num} out of {total_channels} %s" % (fg(11), attr(0)))
+        print(f"{Term.clearscreen()}%s{channel_num} out of {total_channels} %s" % (fg(11), attr(0)))
         while True:
             try:
                 subs[i] = download_channel(yt, i, j, channel_num, total_channels)
@@ -214,7 +210,7 @@ def main():
             break
         channel_num += 1
 
-    write(subs)
+    write_subs_list(subs)
 
 
 if __name__ == "__main__":
@@ -226,6 +222,6 @@ if __name__ == "__main__":
     if args.add_channel:
         for channel in args.add_channel:
             add_subscription(yt,channel)
-    elif args.d:
+    elif args.download:
         main()
 
