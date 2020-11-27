@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+""" find and download all latest song of a youtube channel """
 from __future__ import unicode_literals
 import youtube_dl
 import os
@@ -13,19 +14,20 @@ from tagger import Tag
 import terminal as Term
 
 
-close = False
-final_filename =""
-files_downloaded = []
+CLOSE = False
+FINAL_FILENAME = ""
+FILES_DOWNLOADED = []
 
 
 def write_subs_list(subs):
-    if(files_downloaded):
-        print(Term.clearscreen(),end = "")
+    """ after finish writes changes done to last songs  """
+    if FILES_DOWNLOADED:
+        #  print(Term.clearscreen(), end="")
         print("Downloaded files:")
-        for num, f in enumerate(files_downloaded):
-            print(f"{count}. {f}.mp3")
-    with open("/home/gireesh/.config/.youtube.config/subscription_list", "w") as f:
-        f.write(json.dumps(subs))
+        for num, file in enumerate(FILES_DOWNLOADED):
+            print(f"{num}. {file}.mp3")
+    with open("/home/gireesh/.config/.youtube.config/subscription_list", "w") as file:
+        file.write(json.dumps(subs))
 
 
 # download  based on likes and dislike rate
@@ -33,7 +35,7 @@ def check_stats(yt_id, vd_id):
     vd_details = yt_id.videos().list(id=vd_id, part='statistics').execute()
     likes = int(vd_details['items'][0]['statistics']['likeCount'])
     dislikes = int(vd_details['items'][0]['statistics']['dislikeCount'])
-    return True if likes*5/100 > dislikes else False
+    return likes*5/100 > dislikes
 
 
 def check_time(time):
@@ -53,7 +55,7 @@ def check_time(time):
     if "S" in time:
         seconds = int(time[:time.index("S")])
     delta_time = timedelta(hours=hours, minutes=minutes, seconds=seconds)
-    return delta_time < max_time and delta_time > min_time
+    return (delta_time < max_time) and (delta_time > min_time)
 
 
 def progress_show(opts):
@@ -64,25 +66,26 @@ def progress_show(opts):
         pBarLen = 50
         pDone = "#" * int(download_progress * pBarLen)
         pLeft = "-" * (pBarLen - len(pDone))
-        print(f'{Term.clearline()}{opts["tmpfilename"]}{Term.setCursorLine(40)}{int(opts["elapsed"])}/{int( opts["eta"])}ETA\t[{pDone}{pLeft}]\t{int(download_progress*100)}%',end="\r")
-        global final_filename 
-        final_filename = opts["filename"][:opts["filename"].rfind(".")] + ".mp3"
+        #  print(f'{Term.clearline()}{opts["tmpfilename"]}{Term.setCursorLine(40)}{int(opts["elapsed"])}/{int( opts["eta"])}ETA\t[{pDone}{pLeft}]\t{int(download_progress*100)}%',end="\r")
+        print(f'{opts["tmpfilename"]}{Term.setCursorLine(40)}{int(opts["elapsed"])}/{int( opts["eta"])}ETA\t[{pDone}{pLeft}]\t{int(download_progress*100)}%',end="\r")
+        global FINAL_FILENAME
+        FINAL_FILENAME = opts["filename"][:opts["filename"].rfind(".")] + ".mp3"
     elif opts["status"] == "finished":
         print("")
 
 def download(link):
     download_option = {
-            'format': 'bestaudio/best',
-            'outtmpl': '%(title)s.%(ext)s',
-            'nocheckcertificate': True,
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-                }],
-            'quiet': True,
-            'progress_hooks': [progress_show]
-            }
+        'format': 'bestaudio/best',
+        'outtmpl': '%(title)s.%(ext)s',
+        'nocheckcertificate': True,
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+            }],
+        'quiet': True,
+        'progress_hooks': [progress_show]
+        }
     # Download songs
     with youtube_dl.YoutubeDL(download_option) as dl:
         try:
@@ -94,14 +97,14 @@ def download(link):
 
 def download_channel(yt, channel_id, last_song, channel_num, total_channels):
     """ downloads all pending songs from a channel """
-    global close
+    global CLOSE
     channel = yt.channels().list(id=channel_id, part="contentDetails").execute()
     playlist = channel["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
     download_list = []
     token = None                # page token
     page_end = False                  # last song check variable
     page = 0
-    print(f" Getting musics list:", end="")
+    print(" Getting musics list:", end="")
     while not page_end:
         lst = yt.playlistItems().list(playlistId=playlist, maxResults=10, pageToken=token, part="snippet").execute()
         for i in lst["items"]:
@@ -120,26 +123,30 @@ def download_channel(yt, channel_id, last_song, channel_num, total_channels):
             break
         page += 1
     download_list.reverse()
-    print("",end="\r")
+    print("", end="\r")
     print("\n\n", end="")                   # two lines are needed to display information and are cleared later
     for count, song_link in enumerate(download_list):
         try:
             print(Term.mvCursorVerticle(2)+"\r", end=Term.clearEverythingAfter())
             print(f"%s\tDownloading {count+1} out of {len(download_list)} %s" % (fg(40), attr(0)))
             download(song_link)
-            files_downloaded.append(Tag(final_filename))
+            FILES_DOWNLOADED.append(Tag(FINAL_FILENAME))
         except KeyboardInterrupt:
-            close = True
+            CLOSE = True
+            print("Debug:1")
             return last_song
         except youtube_dl.utils.DownloadError:
             print("download error skipping this one")
-            close = True
+            CLOSE = True
+            print("Debug:2")
             return last_song
         except Exception as unkown_e:
-            close = True
+            CLOSE = True
             print(unkown_e)
-            return last_song
-        last_song = i
+            print("Debug:3")
+            #  return last_song
+            continue
+        last_song = song_link
     return last_song
 
 
@@ -150,7 +157,7 @@ def run_check():
             txt = f.read()
     except FileNotFoundError:
         print("Error: subscription list doesn't exist")
-        if "n" == input("do you want me to create skeleton? [y]/n"):
+        if  input("do you want me to create skeleton? [y]/n") == "n":
             sys.exit(1)
         with open("/home/gireesh/.config/.youtube.config/subscription_list", "w") as f:
             f.write("")
@@ -177,11 +184,10 @@ def add_subscription(yt, channel_id):
     title = yt.channels().list(id=channel_id, part="snippet").execute()['items'][0]['snippet']['title']
     print(f"Adding channel \"{title}\"")
 
-    with open("/home/gireesh/.config/.youtube.config/subscription_list", "r") as f:
+    with open("/home/gireesh/.config/.youtube.config/subscription_list", "r+") as f:
         subs = f.read()
-    subs = json.loads(subs)
-    subs[channel_id] = last_song
-    with open("/home/gireesh/.config/.youtube.config/subscription_list", "w") as f:
+        subs = json.loads(subs)
+        subs[channel_id] = last_song
         f.write(json.dumps(subs))
 
 
@@ -193,19 +199,18 @@ def main():
     channel_num = 1
     total_channels = len(subs)
     for i, j in subs.items():
-        print(f"{Term.clearscreen()}%s{channel_num} out of {total_channels} %s" % (fg(11), attr(0)))
+        print(f"%s{channel_num} out of {total_channels} %s" % (fg(11), attr(0)))
         while True:
             try:
                 subs[i] = download_channel(yt, i, j, channel_num, total_channels)
+                break
             except socket.timeout:
                 if input("socket time out!! Do you wanna continue? [y/N]") == "y":
                     continue
                 print("socket timeout breaking")
                 break
-            else:
-                break
 
-        if close:
+        if CLOSE:
             print("breaked out")
             break
         channel_num += 1
@@ -216,12 +221,16 @@ def main():
 if __name__ == "__main__":
     yt = youtube_auth()
     parser = argparse.ArgumentParser(description="Downloads songs from youtube based on channels")
-    parser.add_argument('-d','--download',action='store_true', help='downloads songs from the youtube based on subscription list')
-    parser.add_argument('-a','--add-channel', metavar='channel url', nargs='+', help='adds channel to your subscription_list')
+    parser.add_argument('-d', '--download', action='store_true', help='downloads songs from the youtube based on subscription list')
+    parser.add_argument('-a', '--add-channel', metavar='channel url', nargs='+', help='adds channel to your subscription_list')
+    parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
+    global VERBOSE
+    VERBOSE = args.verbose
+
     if args.add_channel:
         for channel in args.add_channel:
-            add_subscription(yt,channel)
-    elif args.download:
+            add_subscription(yt, channel)
+    #  else args.download:
+    else:
         main()
-

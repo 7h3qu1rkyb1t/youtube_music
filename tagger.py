@@ -1,17 +1,24 @@
 import eyed3
+import logging
 
 
 def Tag(filename):
     # This function changes songs title so it is better to use this at the end
     special_chars = ["(", "["]  # Used to strip unnecessory song info in the filename.
     song_tag = eyed3.load(filename)
-    tag  = filename[:filename.rfind(".")]
+    tag = filename[:filename.rfind(".")]
+    logging.debug(f"tag is : {tag}")
     try:
-        artist,title = tag.split("-", maxsplit=1)
+        artist, title = tag.split("-", maxsplit=1)
     except ValueError:
-        print("Couldn't get the artist name!!!")
-        title = tag
-        artist = None
+        try:
+            artist, title = tag.split("\u2012", maxsplit=1)
+        except ValueError:
+            print("Couldn't get the artist name!!!")
+            title = tag
+            artist = ""
+
+    logging.debug(f"artist: {artist}, title: {title}")
     for char in special_chars:
         if char in title:
             title = title[:title.index(char)]
@@ -26,4 +33,3 @@ def Tag(filename):
     except OSError:
         pass
     return title
-
