@@ -1,4 +1,5 @@
 import eyed3
+import os
 import logging
 
 
@@ -14,9 +15,12 @@ def Tag(filename):
         try:
             artist, title = tag.split("\u2012", maxsplit=1)
         except ValueError:
-            print("Couldn't get the artist name!!!")
-            title = tag
-            artist = ""
+            try:
+                artist, title = tag.split("_", maxsplit=1)
+            except ValueError:
+                print("Couldn't get the artist name!!!")
+                title = tag
+                artist = ""
 
     logging.debug(f"artist: {artist}, title: {title}")
     for char in special_chars:
@@ -31,5 +35,7 @@ def Tag(filename):
         # if song name isn't changed os error will occur
         song_tag.rename(title)
     except OSError:
+        os.replace(song_tag.path, f"/drives/storage/music/dup/{os.path.basename(song_tag.path)}")
+        logging.warning(f"failed to write title, possible duplicate {title}")
         pass
     return title

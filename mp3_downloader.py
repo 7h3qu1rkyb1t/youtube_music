@@ -17,6 +17,7 @@ import terminal as Term
 CLOSE = False
 FINAL_FILENAME = ""
 FILES_DOWNLOADED = []
+DIRECTORY = "/drives/storage/music/temp/"
 
 
 def write_subs_list(subs):
@@ -123,27 +124,21 @@ def download_channel(yt, channel_id, last_song, channel_num, total_channels):
             break
         page += 1
     download_list.reverse()
-    print("", end="\r")
-    print("\n\n", end="")                   # two lines are needed to display information and are cleared later
     for count, song_link in enumerate(download_list):
         try:
-            print(Term.mvCursorVerticle(2)+"\r", end=Term.clearEverythingAfter())
             print(f"%s\tDownloading {count+1} out of {len(download_list)} %s" % (fg(40), attr(0)))
             download(song_link)
             FILES_DOWNLOADED.append(Tag(FINAL_FILENAME))
         except KeyboardInterrupt:
             CLOSE = True
-            print("Debug:1")
             return last_song
         except youtube_dl.utils.DownloadError:
             print("download error skipping this one")
             CLOSE = True
-            print("Debug:2")
             return last_song
         except Exception as unkown_e:
             CLOSE = True
             print(unkown_e)
-            print("Debug:3")
             #  return last_song
             continue
         last_song = song_link
@@ -195,7 +190,6 @@ def main():
     txt = run_check()
     subs = json.loads(txt)
     global yt
-    os.chdir("/storage/music/temp")
     channel_num = 1
     total_channels = len(subs)
     for i, j in subs.items():
@@ -219,10 +213,12 @@ def main():
 
 
 if __name__ == "__main__":
+    os.chdir(DIRECTORY)
     yt = youtube_auth()
     parser = argparse.ArgumentParser(description="Downloads songs from youtube based on channels")
     parser.add_argument('-d', '--download', action='store_true', help='downloads songs from the youtube based on subscription list')
     parser.add_argument('-a', '--add-channel', metavar='channel url', nargs='+', help='adds channel to your subscription_list')
+    parser.add_argument('-s', '--single', metavar='channel url', nargs='+', help='single song to download')
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
     global VERBOSE
@@ -231,6 +227,9 @@ if __name__ == "__main__":
     if args.add_channel:
         for channel in args.add_channel:
             add_subscription(yt, channel)
-    #  else args.download:
+    elif args.single:
+        for link in args.single:
+            download(link)
+            Tag(FINAL_FILENAME)
     else:
         main()
